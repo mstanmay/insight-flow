@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.APP_ENV.lower() in ("production", "prod")
 
+    @property
+    def effective_database_url(self) -> str:
+        import os
+        if os.environ.get("VERCEL") and self.DATABASE_URL == "sqlite:///./insightflow.db":
+            return "sqlite:////tmp/insightflow.db"
+        return self.DATABASE_URL
+
 
 @lru_cache()
 def get_settings() -> Settings:

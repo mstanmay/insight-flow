@@ -5,14 +5,33 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.core.config import get_settings
 
+import os
+import shutil
+
 settings = get_settings()
+db_url = settings.effective_database_url
+
+# If serverless /tmp sqlite is used and does not exist yet, copy seeded db
+if db_url.startswith("sqlite:////tmp/") and not os.path.exists("/tmp/insightflow.db"):
+    potential_sources = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "insightflow.db"),
+        os.path.join(os.getcwd(), "insightflow.db"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "insightflow.db")
+    ]
+    for src in potential_sources:
+        if os.path.exists(src):
+            try:
+                shutil.copy2(src, "/tmp/insightflow.db")
+                break
+            except Exception:
+                pass
 
 connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
+if db_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
 engine = create_engine(
-    settings.DATABASE_URL,
+    db_url,
     connect_args=connect_args,
     pool_pre_ping=True
 )

@@ -30,9 +30,11 @@ def create_app() -> FastAPI:
     # Middleware
     app.add_middleware(RequestLoggingMiddleware)
     
+    origins = settings.FRONTEND_ORIGINS if isinstance(settings.FRONTEND_ORIGINS, list) else [settings.FRONTEND_ORIGINS]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.FRONTEND_ORIGINS if isinstance(settings.FRONTEND_ORIGINS, list) else [settings.FRONTEND_ORIGINS],
+        allow_origins=origins,
+        allow_origin_regex=r"^https://.*\.vercel\.app$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

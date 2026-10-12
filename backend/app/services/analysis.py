@@ -2,14 +2,13 @@ import re
 import datetime
 from typing import List, Dict, Any, Optional
 from collections import Counter
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import AgglomerativeClustering
 from sqlalchemy.orm import Session
 
 from app.models.entities import Feedback, FeedbackAnalysis, Issue, IssueFeedback, Recommendation, AnalysisJob
 from app.services.sentiment import get_sentiment_provider
 from app.services.priority import calculate_priority_score
 from app.services.recommendations import generate_recommendation_for_issue
+from app.services.clustering import extract_keywords_and_vectors, perform_clustering, SKLEARN_AVAILABLE
 
 URGENCY_KEYWORDS = {
     "scam", "fraud", "crash", "stuck", "freeze", "fail", "failed", "broken",
@@ -53,33 +52,23 @@ def run_dataset_analysis_pipeline(db: Session, job: AnalysisJob) -> None:
             return
 
         sentiment_provider = get_sentiment_provider()
+        clustering_provider_name = "sklearn-tfidf+agglomerative@1.0" if SKLEARN_AVAILABLE else "native-tfidf+cosine-cluster@1.0"
         job.provider_ids = {
             "sentiment": sentiment_provider.provider_id,
-            "clustering": "sklearn-tfidf+agglomerative@1.0",
+            "clustering": clustering_provider_name,
             "priority": "priority-engine@1.0"
         }
 
         # 1. Run sentiment analysis and extract keywords
         texts = [r.normalized_text for r in canonical_records]
         
-        # TF-IDF feature extraction
-        vectorizer = TfidfVectorizer(
-            ngram_range=(1, 2),
-            stop_words="english",
-            max_features=2500,
-            min_df=1
-        )
-        tfidf_matrix = vectorizer.fit_transform(texts)
-        feature_names = vectorizer.get_feature_names_out()
+        # TF-IDF representations and keywords
+        tfidf_vectors, keywords_list = extract_keywords_and_vectors(texts, top_k=5)
 
         analyses = []
         for idx, record in enumerate(canonical_records):
             sent = sentiment_provider.analyze(record.normalized_text)
-            
-            # Top 5 keywords from TF-IDF
-            row_vector = tfidf_matrix[idx].toarray()[0]
-            top_indices = row_vector.argsort()[-5:][::-1]
-            keywords = [feature_names[i] for i in top_indices if row_vector[i] > 0]
+            keywords = keywords_list[idx] if idx < len(keywords_list) else []
 
             analysis = FeedbackAnalysis(
                 feedback_id=record.id,
@@ -98,16 +87,10 @@ def run_dataset_analysis_pipeline(db: Session, job: AnalysisJob) -> None:
         db.commit()
 
         # 2. Cluster distinct texts into issues/topics
-        # Use AgglomerativeClustering with cosine distance threshold
         n_samples = len(canonical_records)
         n_clusters = min(max(n_samples // 10, 3), 15) if n_samples >= 3 else 1
 
-        clustering = AgglomerativeClustering(
-            n_clusters=n_clusters,
-            metric="cosine",
-            linkage="average"
-        )
-        cluster_labels = clustering.fit_predict(tfidf_matrix.toarray())
+        cluster_labels = perform_clustering(tfidf_vectors, n_clusters=n_clusters)
 
         for idx, analysis in enumerate(analyses):
             analysis.cluster_key = f"cluster_{cluster_labels[idx]}"

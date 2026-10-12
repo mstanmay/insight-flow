@@ -8,6 +8,7 @@ from app.core.db import get_db
 from app.core.errors import AppError
 from app.models.entities import Dataset, Feedback, FeedbackAnalysis, Issue, AnalysisJob, Report
 from app.worker.runner import trigger_background_analysis
+from app.services.clustering import SKLEARN_AVAILABLE as clustering_available
 
 router = APIRouter(tags=["Analytics, Reports & Jobs"])
 
@@ -158,7 +159,7 @@ def get_integrations_status():
             "version": "3.3.2"
         },
         "clustering": {
-            "provider": "scikit-learn",
+            "provider": "scikit-learn" if clustering_available else "native-nlp-engine",
             "status": "active",
             "algorithm": "AgglomerativeCosineClustering"
         },
